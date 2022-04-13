@@ -137,3 +137,4 @@ results/*
 
 weights/*.pth
 weights/*.weights
+weights/*

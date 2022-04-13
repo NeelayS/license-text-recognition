@@ -37,6 +37,10 @@ def get_images():
     """
     files = []
     exts = ["jpg", "png", "jpeg", "JPG"]
+
+    if FLAGS.test_data_path[-3:] in exts or FLAGS.test_data_path[-4:] in exts:
+        return [FLAGS.test_data_path]
+
     for parent, dirnames, filenames in os.walk(FLAGS.test_data_path):
         for filename in filenames:
             for ext in exts:
