@@ -45,9 +45,10 @@ class YoloV3DetectionModel:
 
         return filtered_detection
 
-    def __call__(self, img_path, save_path):
+    def __call__(self, img_path, save_path, img=None):
 
-        img = cv2.imread(img_path)
+        if img is None:
+            img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         detections = detect.detect_image(self.model, img)
@@ -156,9 +157,15 @@ class LicenseTextDetector:
 
         return coordinates
 
-    def __call__(self, img_path):
+    def __call__(self, img_path=None, img=None):
 
-        self.vehicle_detection_model(img_path, self.vehicle_detection_img_path)
+        assert (
+            img_path is not None or img is not None
+        ), "Either img_path or CV2 img should be provided"
+
+        self.vehicle_detection_model(
+            img_path=img_path, save_path=self.vehicle_detection_img_path, img=img
+        )
         print("\nDetected vehicle")
 
         coordinates = self._detect_license_plate(self.vehicle_detection_img_path)
