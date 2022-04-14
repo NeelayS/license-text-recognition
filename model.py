@@ -72,6 +72,9 @@ class TextRecognitionModel:
     def __call__(self, img_path):
 
         results = self.ocr_model.ocr(img_path, cls=True)
+        if len(results) == 0 or results is None:
+            raise Exception("No text detected")
+
         texts = [result[-1][0] for result in results]
 
         return texts
