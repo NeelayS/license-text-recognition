@@ -84,6 +84,7 @@ class LicenseTextDetector:
         vehicle_detection_weights,
         vehicle_detection_threshold,
         license_detection_weights,
+        tmp_dir=None,
     ):
 
         self.license_detection_weights = license_detection_weights
@@ -95,10 +96,8 @@ class LicenseTextDetector:
         )
         self.text_recognition_model = TextRecognitionModel()
 
-        self.tmp_dir = "./tmp"
-        if not os.path.exists(self.tmp_dir):
-            os.makedirs(self.tmp_dir)
-            print("\nCreated tmp directory")
+        self.tmp_dir = "./tmp" if tmp_dir is None else tmp_dir
+        os.makedirs(self.tmp_dir, exist_ok=True)
 
         self.vehicle_detection_img_path = os.path.join(
             self.tmp_dir, "vehicle_detection.jpg"
@@ -160,7 +159,7 @@ class LicenseTextDetector:
 
         return coordinates
 
-    def __call__(self, img_path=None, img=None):
+    def __call__(self, img_path=None, img=None, del_tmp_dir=True):
 
         assert (
             img_path is not None or img is not None
@@ -169,17 +168,18 @@ class LicenseTextDetector:
         self.vehicle_detection_model(
             img_path=img_path, save_path=self.vehicle_detection_img_path, img=img
         )
-        print("\nDetected vehicle")
+        # print("\nDetected vehicle")
 
         coordinates = self._detect_license_plate(self.vehicle_detection_img_path)
         self._rotate_resize_plate_detection(
             self.vehicle_detection_img_path, coordinates
         )
-        print("Detected license plate\n")
+        # print("Detected license plate\n")
 
         text = self.text_recognition_model(self.resized_rotated_img_path)
-        print("\nRecognized license plate text:")
+        # print("\nRecognized license plate text:")
 
-        shutil.rmtree(self.tmp_dir)
+        if del_tmp_dir:
+            shutil.rmtree(self.tmp_dir)
 
         return text
