@@ -45,7 +45,7 @@ class YoloV3DetectionModel:
 
         return filtered_detection
 
-    def __call__(self, img_path, save_path, img=None):
+    def __call__(self, img_path, save_path, img=None, return_detection=False):
 
         if img is None:
             img = cv2.imread(img_path)
@@ -59,6 +59,9 @@ class YoloV3DetectionModel:
 
         img = img[detection[1] : detection[3], detection[0] : detection[2], :]
         cv2.imwrite(save_path, img)
+
+        if return_detection:
+            return detection
 
 
 class TextRecognitionModel:
