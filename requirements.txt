@@ -47,6 +47,7 @@ jupyter-core @ file:///home/conda/feedstock_root/build_artifacts/jupyter_core_16
 Keras-Applications==1.0.8
 Keras-Preprocessing==1.1.2
 kiwisolver==1.4.2
+lanms==1.0.2
 lmdb==1.3.0
 lxml==4.8.0
 Markdown==3.3.6

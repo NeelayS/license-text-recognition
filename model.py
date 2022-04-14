@@ -3,12 +3,15 @@ import numpy as np
 import os
 import shutil
 import subprocess
+import torch
 
 from paddleocr import PaddleOCR
 from pytorchyolo import detect, models as yolo_models
 
-
+from EAST_torch.detect import get_boxes, adjust_ratio
+from EAST_torch.models import EAST
 from transform import four_point_transform
+from utils import resize_img, cv2_to_tensor
 
 
 class YoloV3DetectionModel:
@@ -45,7 +48,14 @@ class YoloV3DetectionModel:
 
         return filtered_detection
 
-    def __call__(self, img_path, save_path, img=None, return_detection=False):
+    def __call__(
+        self,
+        img_path,
+        save_path,
+        img=None,
+        return_detection=False,
+        save_detected_img=False,
+    ):
 
         if img is None:
             img = cv2.imread(img_path)
@@ -58,10 +68,14 @@ class YoloV3DetectionModel:
             raise Exception("No vehicles detected")
 
         img = img[detection[1] : detection[3], detection[0] : detection[2], :]
-        cv2.imwrite(save_path, img)
+
+        if save_detected_img:
+            cv2.imwrite(save_path, img)
 
         if return_detection:
             return detection
+
+        return img
 
 
 class TextRecognitionModel:
@@ -69,15 +83,37 @@ class TextRecognitionModel:
 
         self.ocr_model = PaddleOCR(use_angle_cls=True, lang="en")
 
-    def __call__(self, img_path):
+    def __call__(self, img=None):
 
-        results = self.ocr_model.ocr(img_path, cls=True)
+        results = self.ocr_model.ocr(img, cls=True)
         if len(results) == 0 or results is None:
             raise Exception("No text detected")
 
         texts = [result[-1][0] for result in results]
 
         return texts
+
+
+class EASTDetectionModel:
+    def __init__(self, detector_weights_path, backbone_weights_path):
+
+        self.model = EAST(pretrained_path=backbone_weights_path)
+        self.model.load_state_dict(
+            torch.load(detector_weights_path, map_location=torch.device("cpu"))
+        )
+        self.model.eval()
+
+    def __call__(self, img):
+
+        img, ratio_h, ratio_w = resize_img(img)
+        img = cv2_to_tensor(img)
+
+        with torch.no_grad():
+            score, geo = self.model(img)
+
+        boxes = get_boxes(score.squeeze(0).cpu().numpy(), geo.squeeze(0).cpu().numpy())
+
+        return adjust_ratio(boxes, ratio_w, ratio_h)
 
 
 class LicenseTextDetector:
@@ -87,10 +123,27 @@ class LicenseTextDetector:
         vehicle_detection_weights,
         vehicle_detection_threshold,
         license_detection_weights,
+        license_detection_backbone_weights=None,
+        use_east_tf=False,
         tmp_dir=None,
     ):
 
-        self.license_detection_weights = license_detection_weights
+        self.use_east_tf = use_east_tf
+        self.tmp_dir = "./tmp" if tmp_dir is None else tmp_dir
+
+        if use_east_tf is False:
+            assert (
+                license_detection_backbone_weights is not None
+            ), "Backbone weights path is required"
+
+            self.text_detection_model = EASTDetectionModel(
+                detector_weights_path=license_detection_weights,
+                backbone_weights_path=license_detection_backbone_weights,
+            )
+
+        else:
+            self.license_detection_weights = license_detection_weights
+            os.makedirs(self.tmp_dir, exist_ok=True)
 
         self.vehicle_detection_model = YoloV3DetectionModel(
             vehicle_detection_cfg,
@@ -98,9 +151,6 @@ class LicenseTextDetector:
             vehicle_detection_threshold,
         )
         self.text_recognition_model = TextRecognitionModel()
-
-        self.tmp_dir = "./tmp" if tmp_dir is None else tmp_dir
-        os.makedirs(self.tmp_dir, exist_ok=True)
 
         self.vehicle_detection_img_path = os.path.join(
             self.tmp_dir, "vehicle_detection.jpg"
@@ -110,26 +160,37 @@ class LicenseTextDetector:
             self.tmp_dir, "resized_rotated_detection.jpg"
         )
 
-    def _rotate_resize_plate_detection(self, img_path, coordinates):
+    def _rotate_resize_plate_detection(
+        self, coordinates, img=None, img_path=None, save_img=False
+    ):
 
-        img = cv2.imread(img_path)
+        assert (
+            img is not None or img_path is not None
+        ), "Image or image path is required"
+
+        if img is None:
+            img = cv2.imread(img_path)
+            save_img = True
 
         rotated_img = four_point_transform(img, np.array(coordinates))
         y, x, _ = np.shape(rotated_img)
         resized_rotated_img = cv2.resize(rotated_img, (x * 10, y * 10))
 
-        cv2.imwrite(self.rotated_img_path, resized_rotated_img)
-        cv2.imwrite(self.resized_rotated_img_path, resized_rotated_img)
+        if save_img:
+            cv2.imwrite(self.rotated_img_path, resized_rotated_img)
+            cv2.imwrite(self.resized_rotated_img_path, resized_rotated_img)
 
-    def _detect_license_plate(self, img_path):
+        return resized_rotated_img
 
-        # command_str = f"python EAST/eval.py --test_data_path={img_path} --checkpoint_path={self.license_detection_weights} --output_dir={self.tmp_dir}"
+    def _run_east_tf(self, img_path):
+
+        # command_str = f"python EAST_tf/eval.py --test_data_path={img_path} --checkpoint_path={self.license_detection_weights} --output_dir={self.tmp_dir}"
         # os.system(command_str)
 
         subprocess.run(
             [
                 "python",
-                "EAST/eval.py",
+                "EAST_tf/eval.py",
                 f"--test_data_path={img_path}",
                 f"--checkpoint_path={self.license_detection_weights}",
                 f"--output_dir={self.tmp_dir}",
@@ -153,6 +214,18 @@ class LicenseTextDetector:
         box[7] = box[7].rstrip("\n")
         box = [int(st) for st in box]
 
+        return box
+
+    def _detect_license_plate(self, img=None, img_path=None):
+
+        if self.use_east_tf:
+            assert img_path is not None, "Image path is required"
+            box = self._run_east_tf(img_path)
+
+        else:
+            assert img is not None, "Image is required"
+            box = self.text_detection_model(img)[0]
+
         coordinates = [
             [box[0], box[1]],
             [box[2], box[3]],
@@ -168,21 +241,25 @@ class LicenseTextDetector:
             img_path is not None or img is not None
         ), "Either img_path or CV2 img should be provided"
 
-        self.vehicle_detection_model(
+        detected_img = self.vehicle_detection_model(
             img_path=img_path, save_path=self.vehicle_detection_img_path, img=img
         )
         # print("\nDetected vehicle")
 
-        coordinates = self._detect_license_plate(self.vehicle_detection_img_path)
-        self._rotate_resize_plate_detection(
-            self.vehicle_detection_img_path, coordinates
+        coordinates = self._detect_license_plate(
+            img=detected_img, img_path=self.vehicle_detection_img_path
+        )
+        rotated_resized_img = self._rotate_resize_plate_detection(
+            coordinates=coordinates,
+            img=detected_img,
+            img_path=self.vehicle_detection_img_path,
         )
         # print("Detected license plate\n")
 
-        text = self.text_recognition_model(self.resized_rotated_img_path)
+        text = self.text_recognition_model(img=rotated_resized_img)
         # print("\nRecognized license plate text:")
 
-        if del_tmp_dir:
+        if self.use_east_tf and del_tmp_dir:
             shutil.rmtree(self.tmp_dir)
 
         return text
