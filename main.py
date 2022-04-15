@@ -21,8 +21,13 @@ def main(
         license_detection_backbone_weights=license_detection_backbone_weights,
         use_east_tf=use_east_tf,
     )
+
+    start = time()
     text = detector(img_path)
+    end = time()
+
     print(text)
+    print(f"Time taken: {end - start}")
 
 
 if __name__ == "__main__":
@@ -35,8 +40,6 @@ if __name__ == "__main__":
     license_detection_weights = "weights/east_vgg16.pth"
     license_detection_backbone_weights = "weights/vgg16_bn-6c64b313.pth"
 
-    start = time()
-
     main(
         img_path,
         vehicle_detection_cfg,
@@ -46,6 +49,3 @@ if __name__ == "__main__":
         license_detection_backbone_weights=license_detection_backbone_weights,
         use_east_tf=False,
     )
-
-    end = time()
-    print(f"Time taken: {end - start}")
