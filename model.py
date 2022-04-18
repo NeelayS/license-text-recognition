@@ -65,7 +65,8 @@ class YoloV3DetectionModel:
         detection = self._filter_detections(detections)
 
         if detection is None:
-            raise Exception("No vehicles detected")
+            print("No vehicles detected")
+            return None
 
         img = img[detection[1] : detection[3], detection[0] : detection[2], :]
 
@@ -87,7 +88,8 @@ class TextRecognitionModel:
 
         results = self.ocr_model.ocr(img, cls=True)
         if len(results) == 0 or results is None:
-            raise Exception("No text detected")
+            print("No text detected")
+            return None
 
         texts = [result[-1][0] for result in results]
 
@@ -113,7 +115,14 @@ class EASTDetectionModel:
 
         boxes = get_boxes(score.squeeze(0).cpu().numpy(), geo.squeeze(0).cpu().numpy())
 
-        return adjust_ratio(boxes, ratio_w, ratio_h)
+        if boxes is None:
+            boxes = []
+
+        if len(boxes) == 0:
+            print("No vehicles detected")
+            return None
+
+        return adjust_ratio(boxes, ratio_w, ratio_h)[0]
 
 
 class LicenseTextDetector:
@@ -204,7 +213,8 @@ class LicenseTextDetector:
         det_results_path = os.path.join(self.tmp_dir, f"{img_name}.txt")
 
         if not os.path.exists(det_results_path):
-            raise Exception("No license plate detected")
+            print("No license plate detected")
+            return None
 
         with open(det_results_path) as f:
             first_line = f.readline()
@@ -224,7 +234,10 @@ class LicenseTextDetector:
 
         else:
             assert img is not None, "Image is required"
-            box = self.text_detection_model(img)[0]
+            box = self.text_detection_model(img)
+
+        if box is None:
+            return None
 
         coordinates = [
             [box[0], box[1]],
@@ -235,7 +248,7 @@ class LicenseTextDetector:
 
         return coordinates
 
-    def __call__(self, img_path=None, img=None, del_tmp_dir=True):
+    def __call__(self, img=None, img_path=None, del_tmp_dir=True):
 
         assert (
             img_path is not None or img is not None
@@ -244,11 +257,16 @@ class LicenseTextDetector:
         detected_img = self.vehicle_detection_model(
             img_path=img_path, save_path=self.vehicle_detection_img_path, img=img
         )
+        if detected_img is None:
+            return None
         # print("\nDetected vehicle")
 
         coordinates = self._detect_license_plate(
             img=detected_img, img_path=self.vehicle_detection_img_path
         )
+        if coordinates is None:
+            return None
+
         rotated_resized_img = self._rotate_resize_plate_detection(
             coordinates=coordinates,
             img=detected_img,
@@ -257,6 +275,8 @@ class LicenseTextDetector:
         # print("Detected license plate\n")
 
         text = self.text_recognition_model(img=rotated_resized_img)
+        if text is None:
+            return None
         # print("\nRecognized license plate text:")
 
         if self.use_east_tf and del_tmp_dir:
