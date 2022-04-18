@@ -2,14 +2,12 @@ import cv2
 import os
 from time import time
 
-from numpy import average
-
 from model import LicenseTextDetector
 
 
 vehicle_detection_cfg = "configs/yolov3.cfg"
 vehicle_detection_weights = "weights/yolov3.weights"
-vehicle_detection_threshold = 0.25
+vehicle_detection_threshold = 0.05
 license_detection_weights = "weights/east_vgg16.pth"
 license_detection_backbone_weights = "weights/vgg16_bn-6c64b313.pth"
 
@@ -19,10 +17,11 @@ detector = LicenseTextDetector(
     vehicle_detection_threshold,
     license_detection_weights,
     license_detection_backbone_weights=license_detection_backbone_weights,
+    vehicle_detection_filter_type="area",
 )
 
 
-img_dir = "../data/frames/ex1"
+img_dir = "../data/frames/ex2"
 total_time = 0
 
 for img_path in sorted(os.listdir(img_dir)):

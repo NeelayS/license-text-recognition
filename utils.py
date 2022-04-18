@@ -26,3 +26,8 @@ def cv2_to_tensor(img):
         ]
     )
     return t(img).unsqueeze(0)
+
+
+def calc_bb_area(bb):
+    """calculate bounding box area"""
+    return (bb[2] - bb[0]) * (bb[3] - bb[1])

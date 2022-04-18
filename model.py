@@ -11,12 +11,15 @@ from pytorchyolo import detect, models as yolo_models
 from EAST_torch.detect import get_boxes, adjust_ratio
 from EAST_torch.models import EAST
 from transform import four_point_transform
-from utils import resize_img, cv2_to_tensor
+from utils import resize_img, cv2_to_tensor, calc_bb_area
 
 
 class YoloV3DetectionModel:
-    def __init__(self, config_path, weights_path, threshold=0.5):
+    def __init__(
+        self, config_path, weights_path, threshold=0.5, filter_type="confidence"
+    ):
 
+        self.filter_type = filter_type.lower()
         self.threshold = threshold
 
         self.model = yolo_models.load_model(config_path, weights_path)
@@ -25,26 +28,35 @@ class YoloV3DetectionModel:
 
         relevant_class_ids = [2, 3, 5, 7]  # car, motorcycle, bus, truck
         highest_confidence = 0.0
+        largest_bb_area = 0.0
         filtered_detection = None
 
-        for (
-            detection
-        ) in (
-            detections
-        ):  # To-do: Instead of filtering by confidence, filter by area of bounding box (larger the better)
+        for detection in detections:
 
-            # if (
-            #     detection[-2] > self.threshold and int(detection[-1]) == 2
-            # ):  # 2 = vehicle class
-            #     filtered_detection = list(map(lambda x: max(int(x), 0), detection[:-2]))
-            #     filtered_detections.append(filtered_detection)
+            if int(detection[-1]) in relevant_class_ids:
 
-            if (
-                detection[-2] > highest_confidence
-                and int(detection[-1]) in relevant_class_ids
-            ):
-                filtered_detection = list(map(lambda x: max(int(x), 0), detection[:-2]))
-                highest_confidence = detection[-2]
+                # if (
+                #     detection[-2] > self.threshold and int(detection[-1]) == 2
+                # ):  # 2 = vehicle class
+                #     filtered_detection = list(map(lambda x: max(int(x), 0), detection[:-2]))
+                #     filtered_detections.append(filtered_detection)
+
+                if (
+                    self.filter_type == "confidence"
+                    and detection[-2] > highest_confidence
+                ):
+                    filtered_detection = list(
+                        map(lambda x: max(int(x), 0), detection[:-2])
+                    )
+                    highest_confidence = detection[-2]
+
+                elif self.filter_type == "area":
+                    bb_area = calc_bb_area(detection[:-2])
+                    if bb_area > largest_bb_area:
+                        filtered_detection = list(
+                            map(lambda x: max(int(x), 0), detection[:-2])
+                        )
+                        largest_bb_area = bb_area
 
         return filtered_detection
 
@@ -135,6 +147,7 @@ class LicenseTextDetector:
         license_detection_backbone_weights=None,
         use_east_tf=False,
         tmp_dir=None,
+        vehicle_detection_filter_type="confidence",
     ):
 
         self.use_east_tf = use_east_tf
@@ -158,6 +171,7 @@ class LicenseTextDetector:
             vehicle_detection_cfg,
             vehicle_detection_weights,
             vehicle_detection_threshold,
+            vehicle_detection_filter_type,
         )
         self.text_recognition_model = TextRecognitionModel()
 
