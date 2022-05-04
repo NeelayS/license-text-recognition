@@ -21,7 +21,7 @@ detector = LicenseTextDetector(
 )
 
 
-img_dir = "../data/frames/ex2"
+img_dir = "../data/frames/ex1"
 total_time = 0
 
 for img_path in sorted(os.listdir(img_dir)):

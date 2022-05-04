@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import torch
+from time import time
 
 from paddleocr import PaddleOCR
 from pytorchyolo import detect, models as yolo_models
@@ -11,22 +12,28 @@ from pytorchyolo import detect, models as yolo_models
 from EAST_torch.detect import get_boxes, adjust_ratio
 from EAST_torch.models import EAST
 from transform import four_point_transform
-from utils import resize_img, cv2_to_tensor, calc_bb_area
+from utilities import resize_img, cv2_to_tensor, calc_bb_area
 
 
-class YoloV3DetectionModel:
+class YoloDetectionModel:
     def __init__(
-        self, config_path, weights_path, threshold=0.5, filter_type="confidence"
+        self, config_path, weights_path, threshold=0.5, filter_type="area", use_hub=True
     ):
 
         self.filter_type = filter_type.lower()
         self.threshold = threshold
+        self.use_hub = use_hub
 
-        self.model = yolo_models.load_model(config_path, weights_path)
+        if self.use_hub:
+            self.model = torch.hub.load(
+                "ultralytics/yolov5", "yolov5s", pretrained=True, _verbose=False
+            )
+        else:
+            self.model = yolo_models.load_model(config_path, weights_path)
 
     def _filter_detections(self, detections):
 
-        relevant_class_ids = [2, 3, 5, 7]  # car, motorcycle, bus, truck
+        relevant_class_ids = [1, 2, 3, 4, 5, 6, 7, 8]
         highest_confidence = 0.0
         largest_bb_area = 0.0
         filtered_detection = None
@@ -71,9 +78,14 @@ class YoloV3DetectionModel:
 
         if img is None:
             img = cv2.imread(img_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        detections = detect.detect_image(self.model, img)
+        if self.use_hub:
+            results = self.model(img)
+            detections = list(results.xyxy[0])
+        else:
+            detections = detect.detect_image(self.model, img)
+
         detection = self._filter_detections(detections)
 
         if detection is None:
@@ -131,7 +143,7 @@ class EASTDetectionModel:
             boxes = []
 
         if len(boxes) == 0:
-            print("No vehicles detected")
+            print("No text detected on vehicle")
             return None
 
         return adjust_ratio(boxes, ratio_w, ratio_h)[0]
@@ -147,7 +159,7 @@ class LicenseTextDetector:
         license_detection_backbone_weights=None,
         use_east_tf=False,
         tmp_dir=None,
-        vehicle_detection_filter_type="confidence",
+        vehicle_detection_filter_type="area",
     ):
 
         self.use_east_tf = use_east_tf
@@ -167,7 +179,7 @@ class LicenseTextDetector:
             self.license_detection_weights = license_detection_weights
             os.makedirs(self.tmp_dir, exist_ok=True)
 
-        self.vehicle_detection_model = YoloV3DetectionModel(
+        self.vehicle_detection_model = YoloDetectionModel(
             vehicle_detection_cfg,
             vehicle_detection_weights,
             vehicle_detection_threshold,
@@ -268,12 +280,18 @@ class LicenseTextDetector:
             img_path is not None or img is not None
         ), "Either img_path or CV2 img should be provided"
 
+        start = time()
+
         detected_img = self.vehicle_detection_model(
             img_path=img_path, save_path=self.vehicle_detection_img_path, img=img
         )
         if detected_img is None:
             return None
         # print("\nDetected vehicle")
+
+        print(f"Vehicle detection time: {time() - start}")
+
+        start = time()
 
         coordinates = self._detect_license_plate(
             img=detected_img, img_path=self.vehicle_detection_img_path
@@ -288,10 +306,16 @@ class LicenseTextDetector:
         )
         # print("Detected license plate\n")
 
+        print(f"Text detection time: {time() - start}")
+
+        start = time()
+
         text = self.text_recognition_model(img=rotated_resized_img)
         if text is None:
             return None
         # print("\nRecognized license plate text:")
+
+        print(f"Text recognition time: {time() - start}")
 
         if self.use_east_tf and del_tmp_dir:
             shutil.rmtree(self.tmp_dir)
