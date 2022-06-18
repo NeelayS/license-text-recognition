@@ -10,9 +10,9 @@ python main.py
 
 ### To-do
 
-- [ ] Support inference on GPU
-- [ ] Filter vehicle detections by area of bounding box instead of confidence score
-- [ ] Process multiple images and / or detections at a time
+- [x] Support inference on GPU
+- [x] Filter vehicle detections by area of bounding box instead of confidence score
+- [x] Process multiple images and / or detections at a time
 
 
 ### References
